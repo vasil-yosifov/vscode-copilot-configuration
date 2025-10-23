@@ -1,6 +1,6 @@
 # Project Instructions for VS Code
 
-This repository includes language- and tool-specific instructions that guide how code should be created and modified. These rules are intended to be consulted by developers and by AI coding assistants when working in VS Code.
+This repository includes language- and tool-specific instructions tailored for GitHub Copilot in VS Code, guiding how code should be created and modified. These rules are intended to be consulted by developers and AI coding assistants within VS Code.
 
 Instruction files:
 - Bash: [.github/instructions/bash.instructions.md](.github/instructions/bash.instructions.md)
