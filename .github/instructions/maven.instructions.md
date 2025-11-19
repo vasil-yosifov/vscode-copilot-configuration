@@ -8,7 +8,7 @@ You are an expert in Maven and Java build tooling. When creating or editing a `p
 ## Core principles
 - Prefer the minimum required dependencies. Only add what is necessary for the code being introduced.
 - Always include Lombok for Java projects and configure it so it is not packaged at runtime.
-- Always configure the Spotify Docker Maven Plugin to produce a Docker image as part of the build.
+- Always configure the Fabric8 Docker Maven Plugin to produce a Docker image as part of the build. Fabric8 works reliably on all major platforms (Windows, macOS, Linux).
 - Use a dedicated external `Dockerfile` for image builds (avoid inline base image/resources/entrypoint configuration in the plugin).
 - Pin versions via `<properties>` and avoid scattering hard-coded versions.
 - If using Spring Boot, prefer the official parent or BOM for dependency management; otherwise, manage versions explicitly.
@@ -24,7 +24,7 @@ Add properties for commonly used versions; keep them centralized and updated.
 
   <!-- Versions -->
   <lombok.version>REPLACE_WITH_STABLE</lombok.version>
-  <spotify.docker.plugin.version>REPLACE_WITH_STABLE</spotify.docker.plugin.version>
+  <fabric8.docker.plugin.version>REPLACE_WITH_STABLE</fabric8.docker.plugin.version>
 </properties>
 ```
 
@@ -76,35 +76,43 @@ Only declare this if not inherited from a parent. Keep it minimal.
 
 Lombok works with default annotation processing; do not add extra configuration unless required by the environment.
 
-## Docker image with Spotify Docker Maven Plugin (required)
-Always configure the Spotify Docker Maven Plugin so a Docker image is built at `package` phase using a dedicated external `Dockerfile`.
+## Docker image with Fabric8 Docker Maven Plugin (required)
+Always configure the Fabric8 Docker Maven Plugin so a Docker image is built at `package` phase using a dedicated external `Dockerfile`. The Fabric8 plugin works consistently across all major platforms (Windows, macOS, Linux), making it ideal for cross-platform development teams.
 
 ```xml
 <build>
   <plugins>
     <plugin>
-      <groupId>com.spotify</groupId>
+      <groupId>io.fabric8</groupId>
       <artifactId>docker-maven-plugin</artifactId>
-      <version>${spotify.docker.plugin.version}</version>
+      <version>${fabric8.docker.plugin.version}</version>
       <configuration>
-        <imageName>${project.groupId}/${project.artifactId}:${project.version}</imageName>
-        <!-- Docker build context and Dockerfile location -->
-        <dockerDirectory>${project.basedir}</dockerDirectory>
-        <dockerFile>${project.basedir}/Dockerfile</dockerFile>
-        <!-- Make the built JAR available in the Docker build context -->
-        <resources>
-          <resource>
-            <targetPath>.</targetPath>
-            <directory>${project.build.directory}</directory>
-            <includes>
-              <include>${project.build.finalName}.jar</include>
-            </includes>
-          </resource>
-        </resources>
-        <!-- Pass the JAR file name as a build-arg for use in the Dockerfile -->
-        <buildArgs>
-          <JAR_FILE>${project.build.finalName}.jar</JAR_FILE>
-        </buildArgs>
+        <images>
+          <image>
+            <name>${project.groupId}/${project.artifactId}:${project.version}</name>
+            <build>
+              <!-- Use external Dockerfile -->
+              <dockerFile>${project.basedir}/Dockerfile</dockerFile>
+              <!-- Pass the JAR file name as a build-arg -->
+              <args>
+                <JAR_FILE>${project.build.finalName}.jar</JAR_FILE>
+              </args>
+              <!-- Assembly to copy JAR into Docker build context -->
+              <assembly>
+                <mode>dir</mode>
+                <targetDir>/</targetDir>
+                <inline>
+                  <files>
+                    <file>
+                      <source>${project.build.directory}/${project.build.finalName}.jar</source>
+                      <outputDirectory>.</outputDirectory>
+                    </file>
+                  </files>
+                </inline>
+              </assembly>
+            </build>
+          </image>
+        </images>
       </configuration>
       <executions>
         <execution>
@@ -122,8 +130,9 @@ Always configure the Spotify Docker Maven Plugin so a Docker image is built at `
 
 Notes:
 - Place the `Dockerfile` at the module root (`${project.basedir}/Dockerfile`).
-- Keep the Docker build context minimal; only copy the built JAR into context using the plugin's `<resources>`.
+- Keep the Docker build context minimal; only copy the built JAR into context using the plugin's `<assembly>`.
 - Name the image using `${project.groupId}/${project.artifactId}:${project.version}` for consistency.
+- The Fabric8 plugin works identically on Windows, macOS, and Linux, ensuring consistent builds across development environments.
 
 ### Dockerfile (minimal example)
 Create a `Dockerfile` next to the module `pom.xml` with the following minimal content:
@@ -142,11 +151,12 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 ```
 
 ## Troubleshooting
-- Dockerfile not found: Ensure the file exists at `${project.basedir}/Dockerfile` and the plugin points to it via `<dockerFile>` and `<dockerDirectory>${project.basedir}</dockerDirectory>`.
-- JAR not copied into build context: Verify the plugin `<resources>` includes `${project.build.finalName}.jar` from `${project.build.directory}` and that the module packages successfully before the Docker build runs.
-- Build arg not applied: Confirm your Dockerfile declares `ARG JAR_FILE` before `COPY` and that the plugin sets `<buildArgs><JAR_FILE>${project.build.finalName}.jar</JAR_FILE></buildArgs>`.
-- Docker not running/permission denied: Start Docker Desktop (macOS) and ensure your user can run Docker commands.
+- Dockerfile not found: Ensure the file exists at `${project.basedir}/Dockerfile` and the plugin references it via `<dockerFile>${project.basedir}/Dockerfile</dockerFile>`.
+- JAR not copied into build context: Verify the plugin's `<assembly>` section correctly references `${project.build.directory}/${project.build.finalName}.jar` and that the module packages successfully before the Docker build runs.
+- Build arg not applied: Confirm your Dockerfile declares `ARG JAR_FILE` before `COPY` and that the plugin sets `<args><JAR_FILE>${project.build.finalName}.jar</JAR_FILE></args>` within the `<build>` section.
+- Docker not running/permission denied: Start Docker Desktop (macOS/Windows) or ensure Docker daemon is running (Linux) and that your user can run Docker commands.
 - Multi-module pitfalls: Apply the Docker plugin only to modules that produce runnable artifacts; avoid adding it to parent/aggregator modules.
+- Platform-specific issues: The Fabric8 plugin works identically on Windows, macOS, and Linux. If builds fail on one platform but not others, check Docker daemon configuration and file path formatting.
 
 ## Testing (minimal guidance)
 - Use JUnit 5 (`junit-jupiter`) only; avoid legacy JUnit 4 unless strictly required.
@@ -161,7 +171,7 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 - In child POMs, do not hard-code versions. Either:
   - Omit versions entirely when they are managed by a parent BOM/`<dependencyManagement>`, or
   - Reference the parent property with `${...}` if a version must be specified.
-- Use consistent property names across the build (e.g., `lombok.version`, `spotify.docker.plugin.version`).
+- Use consistent property names across the build (e.g., `lombok.version`, `fabric8.docker.plugin.version`).
 - Do not override parent-managed versions in children unless absolutely necessary; if overridden, leave a short comment explaining why.
 
 Example parent POM properties:
@@ -174,7 +184,7 @@ Example parent POM properties:
 
     <!-- Centralized versions -->
     <lombok.version>REPLACE_WITH_STABLE</lombok.version>
-    <spotify.docker.plugin.version>REPLACE_WITH_STABLE</spotify.docker.plugin.version>
+    <fabric8.docker.plugin.version>REPLACE_WITH_STABLE</fabric8.docker.plugin.version>
     <!-- Example: Spring Boot if not using parent/BOM -->
     <spring.boot.version>REPLACE_WITH_STABLE</spring.boot.version>
   </properties>
@@ -233,9 +243,9 @@ Example child POM usage:
   <build>
     <plugins>
       <plugin>
-        <groupId>com.spotify</groupId>
+        <groupId>io.fabric8</groupId>
         <artifactId>docker-maven-plugin</artifactId>
-        <version>${spotify.docker.plugin.version}</version>
+        <version>${fabric8.docker.plugin.version}</version>
       </plugin>
     </plugins>
   </build>
@@ -244,10 +254,10 @@ Example child POM usage:
 
 ## Versioning and reproducibility
 - Pin all direct dependency and plugin versions via `<properties>` or a BOM; avoid `LATEST` or `RELEASE`.
-- Keep the property names consistent across modules (e.g., `lombok.version`, `spotify.docker.plugin.version`).
+- Keep the property names consistent across modules (e.g., `lombok.version`, `fabric8.docker.plugin.version`).
 
 ## Acceptance criteria for edits
 - POM builds successfully with only the necessary dependencies.
 - Lombok is present with `provided` scope and does not bloat the runtime image.
-- Docker image builds automatically at `mvn package` via the Spotify plugin.
+- Docker image builds automatically at `mvn package` via the Fabric8 plugin on all major platforms (Windows, macOS, Linux).
 - Versions are centralized in `<properties>` or controlled by a BOM; no duplicated hard-coded versions.
